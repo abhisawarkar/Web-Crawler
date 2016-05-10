@@ -1,0 +1,499 @@
+#!/usr/bin/python
+
+#Imported Libraries
+
+import socket
+import urlparse
+import sys
+from bs4 import BeautifulSoup
+import re
+import ssl
+from _ssl import CERT_NONE
+import sys
+
+
+
+#Resolve IP address of host by name
+
+host=socket.gethostbyname("cs5700sp15.ccs.neu.edu")
+
+
+
+#Create a GET request for accessing login page of fakebook
+
+request="GET /accounts/login/?next=/fakebook/ HTTP/1.0\r\nConnection: keep-alive\r\n\r\n"
+
+
+
+#Create socket
+
+s=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+
+
+
+#Connect to socket with resolved IP and port number of HTTP
+
+s.connect((host,80))
+
+
+
+#Send initial GET request
+
+s.send(request)
+
+
+
+#Recieve a response
+
+response=s.recv(10000)
+
+
+
+#Parse the response to get CSRF token and Session ID
+
+a=response.find("csrftoken")
+b=response.find("sessionid")
+
+
+
+#Calculate length of string which is to be used in body of POST message 
+
+c="csrfmiddlewaretoken="+ response[a+10:a+42] + "&username=001771478&password=DYDCWL46&next=/fakebook/\r\n"
+d=len(c)
+
+
+
+#Create POST request with all necessary headers and a body
+#We are using the parsed CSRF token and Session ID parsed from the previous repsonse
+#Username and password fields are taken as inputs given by user on command line
+
+request1="POST /accounts/login/ HTTP/1.0\r\nHost: cs5700sp15.ccs.neu.edu\r\nConnection: keep-alive\r\nContent-Length: 107\r\nOrigin: http://cs5700sp15.ccs.neu.edu\r\nContent-Type: application/x-www-form-urlencoded\r\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\nAccept-Encoding: gzip,deflate,sdch\r\nReferer: http://cs5700sp15.ccs.neu.edu/accounts/login/?next=/fakebook/\r\nAccept-Encoding: gzip, deflate\r\nAccept-Language: en-US,en;q=0.8\r\nCookie: csrftoken=" + response[a+10:a+42] + "; sessionid=" + response[b+10:b+42] + "\r\n\r\n"+"csrfmiddlewaretoken="+ response[a+10:a+42]+"&username="+sys.argv[1]+"&password="+sys.argv[2]+"&next=/fakebook/\r\n"
+
+
+
+#Send GET request
+
+s.send(request1)
+
+
+
+#Recieve respnse
+
+response1=s.recv(77777777)
+s.close()
+s=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+
+
+
+#Connect to socket with resolved IP and port number of HTTP
+
+s.connect((host,80))
+
+
+#Parse response for new Session ID
+
+y=response1.find("sessionid")
+
+
+#Create new GET request with new Session ID got after logging in 
+
+request2="GET /fakebook/ HTTP/1.0\r\nConnection: keep-alive\r\nCookie: csrftoken=" + response[a+10:a+42] + "; sessionid=" + response1[y+10:y+42] + "\r\n\r\n"
+
+
+#Send GET request
+
+s.send(request2)
+
+
+
+#Recieve GET response
+
+response2=s.recv(99999999)
+
+
+
+#Parse latest response for a Session ID
+
+z=response2.find("sessionid")
+
+
+
+#Create a list which stores links to be visited
+
+to_visit=["/fakebook/"]
+
+
+
+#Create a list that stores the links which are already traversed.
+#These links are pre-stored as these were visited before and one is a mailbox and not a HTTP link
+ 
+traversed=["mailto:choffnes@ccs.neu.edu","http://www.northeastern.edu","http://www.ccs.neu.edu/home/choffnes/"]
+
+
+
+#Create list for storing secret flags
+
+secretflag=[]
+
+
+
+#Create list for storing forbidden links
+
+forbidden=[]
+
+
+
+#Run a while loop till its breaked by some specified condition
+
+while True:
+
+
+#Initialise i=0 as variable so as to traverse the already visited links
+
+	i=0
+
+
+
+#The while loop check the list for previously visited links till the entire length of list of visited links 
+
+	while i < len(traversed):
+
+
+
+#Break the code if the length of list to be visited is zero i.e. no links in list to be visited
+
+		if len(to_visit) == 0:
+			break
+
+
+#Else check if the first link in to_visit list is already visited or not
+#If visited earlier, pop the link and set i=0 to check the next link for whole list of visited links
+#Pop links till you get a fresh link to be traversed
+
+		else:
+			if traversed[i]==to_visit[0]:			
+				to_visit.pop(0)
+				i=0
+			else:
+				i=i+1
+
+
+
+#Create GET request with fresh link to be traveresed as a local path 
+
+	request3="GET "+to_visit[0]+" HTTP/1.0\r\nConnection: keep-alive\r\nCookie: sessionid=" + response1[y+10:y+42]+"\r\n\r\n"
+	
+
+
+#Create a new socket, connect to socket with resolved IP address 
+		
+	s=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+	s.connect((host,80))
+
+
+
+#Send the GET request and recieve the reponse in variable response3
+	
+	s.send(request3)
+	response3=s.recv(99999)
+
+
+
+#Close the socket
+
+	s.close()
+
+
+
+#Append the recented visited link to the traversed list
+		
+	traversed.append(to_visit[0])
+
+
+		
+#Split the response by \n
+
+	z1=response3.split("\n")
+
+
+	
+#Search for "Connection:" word in the splitted response
+
+	for n in z1:
+		if re.search("Connection:", n):
+			c=n.split(" ")
+
+
+
+#Search for "Location:" word in the splitted response
+			
+	for n1 in z1:
+		if re.search("Location:", n1):
+
+#Split the string of Location by space and parse for getting path and query
+
+			w=n1.split(" ")
+			q=urlparse.urlparse(w[1])
+
+
+		
+#Just the split the response using space
+
+	u=response3.split(" ")	
+	
+
+
+
+#Gets in this if condition, if the status code in response is 500 i.e Internal Server Error 		
+
+	if u[1] == "500":
+
+
+#If the internal server errror is detected, run the while loop when the connection type is close
+#Loop breaks when we get Keep-ALive in the connection field
+		
+		while len(c[1]) == 6:
+
+#Create GET request with the same local path for which we got an internal server error
+
+			request3="GET "+to_visit[0]+" HTTP/1.0\r\nConnection: keep-alive\r\nCookie: sessionid=" + response1[y+10:y+42]+"\r\n\r\n"
+
+
+#Create a new socket, connect to socket with resolved IP address 
+
+			s=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+			s.connect((host,80))	
+
+#Send the GET request and recieve the reponse in variable response3
+	
+			s.send(request3)
+			response3=s.recv(99999)
+
+#Close socket
+			s.close()
+
+#Split the response by \n
+ 
+			z1=response3.split("\n")
+
+#Search for "Connection:" word in the splitted response
+			
+			for n in z1:
+				if re.search("Connection:", n):
+					c=n.split(" ")
+
+#Append the recently visited link to the traversed list
+
+		traversed.append(to_visit[0])		
+
+#Pop the recently visited link
+
+		to_visit.pop(0)
+
+
+
+
+#Gets in this if condition, if the status code in response is 404 i.e. Page not found or 403 i.e. Forbidden 
+
+	elif u[1] == "404" or u[1] == "403":
+
+#Create a socket and connect using resolved IP address 
+
+		s=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+		s.connect((host,80))	
+
+#Append the link of forbidden or not found page to forbidden list of links
+	
+		forbidden.append(to_visit[0])
+
+#Pop the forbidden link from the to visit list
+
+		to_visit.pop(0)
+
+#Create a GET request 
+
+		request3="GET "+to_visit[0]+" HTTP/1.0\r\nConnection: keep-alive\r\nCookie: sessionid=" + response1[y+10:y+42]+"\r\n\r\n"
+
+#Send request
+
+		s.send(request3)
+
+#Pop the new recently visited link and receive the response 
+ 
+		to_visit.pop(0)
+		response3=s.recv(99999)
+
+#Append the recently visited link to the traversed list and closes socket
+
+		traversed.append(to_visit[0])
+		s.close()
+
+
+
+#Gets in this if condition, if the status code in response is 301 i.e Page moved permanently 
+
+	elif u[1] == "301":
+
+#Create a new socket, connect to socket with resolved IP address 
+
+		s=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+		s.connect((host,80))
+
+#Find the new session id, if changed
+
+		e=response3.find("sessionid")
+		
+#Get the local path and query from the location mentioned in the response
+
+		g=q.path+q.query
+
+#Create a GET request with the new local path and query
+ 
+		request3="GET "+g+" HTTP/1.0\r\nConnection: keep-alive\r\nCookie: sessionid=" + response3[e+10:e+42]+"\r\n\r\n"
+
+#The recently visited link is appended to the traversed list and pop the link
+
+		traversed.append(g)
+		to_visit.pop(0)
+
+#Send the request with newly constructed GET message, receive the response and close socket
+ 
+		s.send(request3)
+		response3=s.recv(999999)
+		s.close()
+
+
+
+#Gets in this if condition, if the status code in response is 302 i.e Page Found 
+
+	elif u[1] == "302":
+
+#If the domain of the page is the same as we want to traverse, then get into this if condition
+
+		if q.netloc == "cs5700sp15.ccs.neu.edu":
+
+#Create a socket and connect with resolved IP
+
+			s=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+			s.connect((host,80))
+			
+#Find the new session id in the response, if changed
+
+			e=response3.find("sessionid")
+
+#Create a string with local path and query mentioned in Location
+
+			g=q.path+q.query
+	
+#Crete GET message with new path mentioned in Location
+
+			request3="GET "+g+" HTTP/1.0\r\nConnection: keep-alive\r\nCookie: sessionid=" + response3[e+10:e+42]+"\r\n\r\n"
+
+#Append the local path to the list of traversed links
+
+			traversed.append(g)
+
+#Pop the link which showed the page found error as the new mentioned link is already in new GET request
+
+			to_visit.pop(0)
+
+#Send request and recieve the response
+ 
+			s.send(request3)
+			response3=s.recv(999999)
+
+#Close socket
+			s.close()
+			
+#If the above if condition is not matched i.e. link not in specified domain. Then enter the else condition.
+
+
+
+		else:
+
+#If it is the first link which is not in domain then print an exception and break the code
+
+
+			if len(to_visit) == 1:
+				print "The first crawled page is outside top level domain: cs5700sp15.ccs.neu.edu. Hence, no secret flags found."
+				print response3				
+				break
+
+#If not the first link, just pop the link as pages outside domain are not to be traversed
+
+
+
+			else:
+				to_visit.pop(0)	
+					
+
+
+
+#Gets in this if condition, if the status code in response is 200 i.e OK
+
+	elif u[1] == "200":
+
+#Just pop the recently visited link and close the socket
+
+		to_visit.pop(0)
+		s.close()
+
+
+
+#Beautiful soup is used to extract the html page from the response			
+	
+
+	soup=BeautifulSoup(response3)					
+		
+
+
+#Find href links with tag "a" in the variable having response as html page 
+	
+	for tag in soup.findAll('a',href=True):
+						
+		a=tag.get('href')
+						
+
+
+#If the tagged link is in visited list of links, then append it to traversed list
+
+		if a in tag['href'] and tag['href'] not in traversed:
+									
+			to_visit.append(tag['href'])
+
+
+
+#Find the index of "FLAG" in response 
+			
+	p=response3.find("FLAG")
+
+
+
+#If the FLAG is found, append the 64 bit flag to the list of secret flags
+
+	if p>1:	
+		secretflag.append(response3[p+6:p+70])
+
+
+
+#Break the code when we get 5 secretflags in the list of secret flags
+
+	if len(secretflag) == 5:
+		break
+
+
+
+#Initialise j=0 and check if the length of list of secret flags is not zero
+
+j=0	
+if len(secretflag) != 0:
+
+
+
+#For non-zero length of list of secret flags, print each secret flag in a new line till all flags are printed  
+
+	while j<5:
+
+		print "%s" % (secretflag[j])
+		j=j+1
+
